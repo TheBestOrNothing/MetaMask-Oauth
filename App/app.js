@@ -12,11 +12,13 @@ var createError = require('http-errors');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 
-var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
 var authRouter = require('./routes/auth');
 var oauth2Router = require('./routes/oauth2');
+var metamaskRouter= require('./routes/metamask');
+
 var openidRouter = require('./routes/openid');
+var indexRouter = require('./routes/index');
+var usersRouter = require('./routes/users');
 
 // initialize express
 var app = express();
@@ -49,6 +51,7 @@ app.use('/', indexRouter);
 app.use('/users', usersRouter);
 app.use('/auth', authRouter);
 app.use('/oauth2', oauth2Router);
+app.use('/metamask', metamaskRouter);
 app.use('/openid', openidRouter);
 
 // catch 404 and forward to error handler

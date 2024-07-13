@@ -175,9 +175,9 @@ class AuthProvider {
         }
     }
 
-    getCode(options = {}) {
+    getWalletAddress(options = {}) {
         return async (req, res, next) => {
-            res.sendFile(path.join(__dirname, '..', 'public', 'indexCustomOauth.html'));
+            res.sendFile(path.join(__dirname, '..', 'public', 'indexMetaMask.html'));
         }
     }
 
