@@ -17,6 +17,8 @@
     "express-session": "^1.18.0",
     "hbs": "^4.2.0",
     "http-errors": "^2.0.0",
-    "morgan": "^1.10.0"
+    "morgan": "^1.10.0",
+    "@metamask/eth-sig-util": "^7.0.1",
+    "ethereumjs-util": "^5.1.1"
   }
 }

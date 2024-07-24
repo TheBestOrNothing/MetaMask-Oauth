@@ -18,6 +18,11 @@ router.get('/', function (req, res, next) {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Serve favicon.ico file
+router.get('/favicon.ico', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
+});
+
 router.get('/me', function (req, res, next) {
 
         const responseObject = {

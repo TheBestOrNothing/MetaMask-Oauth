@@ -4,13 +4,25 @@ var path = require('path');
 
 const { msalConfig } = require('../authConfig');
 
+const {
+  encrypt,
+  recoverPersonalSignature,
+  recoverTypedSignature,
+} = require('@metamask/eth-sig-util');
+
+const crypto = require('crypto');
+const { time } = require('console');
+const { toChecksumAddress } = require('ethereumjs-util');
+
 class AuthProvider {
     msalConfig;
     cryptoProvider;
+    users;
 
     constructor(msalConfig) {
         this.msalConfig = msalConfig
         this.cryptoProvider = new msal.CryptoProvider();
+        this.users = new Map();
     };
 
     login(options = {}) {
@@ -181,19 +193,164 @@ class AuthProvider {
         }
     }
 
+    personalSignVerify(state, stateSign) {
+        try {
+          const stateHex = `0x${Buffer.from(state, 'utf8').toString('hex')}`;
+          const recoveredAddr = recoverPersonalSignature({
+            data: stateHex,
+            signature: stateSign,
+          });
+            console.log(`SigUtil Successfully verified signer as ${recoveredAddr}`);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    personalSignVerify(timestamp, account, sign) {
+    
+        const time = BigInt(timestamp);
+        console.log(time.toString());
+
+        const msgParams = {
+          domain: {
+            chainId: '0x1',
+            name: 'RocketChat Login',
+            verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+            version: '1',
+          },
+          message: {
+            account: account,
+            timestamp: time,
+          },
+          primaryType: 'Code',
+          types: {
+            EIP712Domain: [
+              { name: 'name', type: 'string' },
+              { name: 'version', type: 'string' },
+              { name: 'chainId', type: 'uint256' },
+              { name: 'verifyingContract', type: 'address' },
+            ],
+            Code: [
+              { name: 'account', type: 'string' },
+              { name: 'timestamp', type: 'uint256' },
+            ],
+          },
+        };
+
+
+        try {
+            const from = account;
+            const recoveredAddr = recoverTypedSignature({
+                data: msgParams,
+                signature: sign,
+                version: 'V4',
+            });
+
+            console.log(recoveredAddr);
+
+            if (toChecksumAddress(recoveredAddr) === toChecksumAddress(from)) {
+                console.log(`Successfully verified signer as ${recoveredAddr}`);
+                return true;
+            } else {
+                console.log(
+                `Failed to verify signer when comparing ${recoveredAddr} to ${from}`,
+                );
+                return false;
+            }
+        } catch (err) {
+            console.error(err);
+            return false;
+        }
+    };
+
     token(options = {}) {
         return (req, res, next) => {
-            const tokenResponse = {
-                token_type: 'Bearer',
-                expires_in: '3599',
-                ext_expires_in: '3599',
-                expires_on: '1717638666',
-                access_token: 'PAQABAQIAAADnfolhJpSnRYB1SVj-Hgd8p8gA3lRIkWiVjFvV3aFNVhXOViIEyPYtOf_z9iWS4jqHDPwyENZJqU4Yn2zXRX9OrBmEuuxgf1wgbeKDDKKiL_CaiHh53A6Xfd7Se1noYBn6CS1ilFtt5qm559rrv7c8Lpz7dkciTZLjhVsnSw__Uz2IoLhpgOmZ4yi4_qiyy0Il8Oi6mpctiVOCMMbpku9PxzkDCa3ZTk39ZxEjkpxsPy5uiEDKpuQJLB25zjV0-YMFbOchvZDu9jfK8h0bhRX1X4ZqlFZlUwEPUEPxib_2VxnEjONGu4rY3S1C3T-oBMkhgK0IFEe-yTRmYFs8kgQa-9qrmMHcoxmiSGYiTgBieAlYTpC6LvPaNajr2pZFLzjnjUcEJcOU5vnJKR3lp1___ZMwcOV55gzuXjamVj72X7X-34nXdGwSHPU3JsoKRI4Zwwm4R7UAhPoAUME2B4ioFDq2wp8mHYEngMAaxlSRpSAA',
-                refresh_token: '0.AbcAqYXm1SM-2UKe-hXMXBzn2xNWhOMxA8BJnxH7amNCQtL8APU.AgABAwEAAADnfolhJpSnRYB1SVj-Hgd8AgDs_wUA9P_VDKD03s7tqUzP8vKvKEy1gPDenTmHGVx15xjeWwmI-YYka8UKmlf4-vfMtuiWwNexDXBvS4KPRNAfXTa6Sk-gM7YI3ONH1-lTGUncdLe1Y6F3QZdrx1rDCBssQSFX94ATiY-MxsNFEoJH0l4azSNBV8oWHo84f0p5YqSHVaTMIIme_zDcfWKkKGfM6zURPv2xazKIh9buuUxsTrs4AN3iNx8aAYR1mplDlgBL5hHGaZyifOzmcvIgBOzjuwmyWFCzgLPPxd6GRAh7M3eaN9QbVf0oYQ_5rxw5wQBox9FzhWnfgojklnD2uG6RJGFfZki5O6kMuNZcFuerYliuqO2q2uJG11UDSgfnWK4Wd54I3gH6p9TWcV7DWqOrFDa-hk4RoPPxJChWHcMDur7WlJxG0KOeh4vuU1tyhMikWtNiV_3KPhhyUANoJELGslhd6FqTXJgnxtKa11uAWmYxSW9Xd06St5Q8TIWAnTyfAKV2eMhXti86NWGpSQ7KqKzFA43ZY0l9UXibV8BYSTF4rYwNqLloGkIzq3bj-LHppsg_tX1QfTd8nB4JnLxZlqsn-RLXV1JZmx5O2HHXHDT2yrxwiSkPd5h9cnC4Wk4Wnh7pe5MNrivZjwV3O38oAiZu1m7adyluHBJJxiq8KSMBU8-GmryWFKGbSENJD3VYuh9jHwisoBtDpHbIMBeMADWz1M4b8sB5cA1maQyKMVBFEUcjETK_pH59IHZfJYWMODhkfB3LGH0',
-                id_token: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6IkwxS2ZLRklfam5YYndXYzIyeFp4dzFzVUhIMCIsImtpZCI6IkwxS2ZLRklfam5YYndXYzIyeFp4dzFzVUhIMCJ9.eyJhdWQiOiJlMzg0NTYxMy0wMzMxLTQ5YzAtOWYxMS1mYjZhNjM0MjQyZDIiLCJpc3MiOiJodHRwczovL3N0cy53aW5kb3dzLm5ldC9kNWU2ODVhOS0zZTIzLTQyZDktOWVmYS0xNWNjNWMxY2U3ZGIvIiwiaWF0IjoxNzE3NjM0NzY2LCJuYmYiOjE3MTc2MzQ3NjYsImV4cCI6MTcxNzYzODY2NiwiYW1yIjpbInB3ZCIsIm1mYSJdLCJmYW1pbHlfbmFtZSI6Ikd1bXAiLCJnaXZlbl9uYW1lIjoiRm9ycmVzdCIsImlwYWRkciI6IjM0LjkyLjIwNC4yMjgiLCJuYW1lIjoiRm9ycmVzdCBHdW1wIiwib2lkIjoiOTBmNzU5NmItODhiNi00NzY4LTgyMDQtOGM0NzZhNzNmZTI1IiwicmgiOiIwLkFiY0FxWVhtMVNNLTJVS2UtaFhNWEJ6bjJ4TldoT014QThCSm54SDdhbU5DUXRMOEFQVS4iLCJzdWIiOiJLR2NlTEgtSG9FTklONUg0alZ3d2FMSTJydHBILVMyQ1RuSkNIQTB5MGFrIiwidGlkIjoiZDVlNjg1YTktM2UyMy00MmQ5LTllZmEtMTVjYzVjMWNlN2RiIiwidW5pcXVlX25hbWUiOiJGb3JyZXN0R3VtcEBHaXRjb2lucy5vbm1pY3Jvc29mdC5jb20iLCJ1cG4iOiJGb3JyZXN0R3VtcEBHaXRjb2lucy5vbm1pY3Jvc29mdC5jb20iLCJ1dGkiOiJ4TTF0eGxqTnJreWt6UktodnA0NEFBIiwidmVyIjoiMS4wIn0.gvCI4lh_flmOLW5Z4-uLqMC3mnGLMXMdgNtRb8I-wn5KYs1pLzkQiKuthd_BwTO2C40hWzxu8-ghtRqHeUF7SYU9ZCAJja9P6vAKp1gds1XFKXwes68B2FFT8pfcixwXWVH8kIIt1gepoxNVZbg5s5wNDRpmg8uAsp_QD00rqxyPYIs5fZ4W7bRL8CLXj9DB1tiXK-AB8h45OZ0z6_j2aPWaMYDD63iPSiPAZtUfw3vjetrawSK-WWTR_Y0NTC5LO9dmWAdnq2U3wlUQYfqJ-oTQ3Qo_Xlp-uNYv2HgtMNLO63vYOOFyzdoyPxNTvV4PNLrQZFRyjYjDCUEB_UoZog'
-            };
 
-            res.json(tokenResponse);
+            const code = req.body.code;
+            console.log("Code ............", code);
+            const codeParts = code.split('.');
+            console.log("Code ............", codeParts);
+            const timestamp = codeParts[0];
+            const account = codeParts[1];
+            const sign = codeParts[2];
+
+            if(this.personalSignVerify(timestamp, account, sign)){
+                const tokenResponse = {
+                    token_type: 'Bearer',
+                    expires_in: '3599',
+                    ext_expires_in: '3599',
+                    expires_on: '1717638666',
+                    access_token: sign,
+                    refresh_token: sign,
+                    id_token: sign 
+                };
+
+                const user = {
+                    amr: '["pwd","mfa"]',
+                    //family_name: 'Gump',
+                    //given_name: 'Forrest',
+                    ipaddr: '34.92.204.228',
+                    //name: 'Forrest Gump',
+                    oid: '90f7596b-88b6-4768-8204-8c476a73fe25',
+                    rh: '0.AbcAqYXm1SM-2UKe-hXMXBzn2xNWhOMxA8BJnxH7amNCQtL8APU.',
+                    //sub: 'KGceLH-HoENIN5H4jVwwaLI2rtpH-S2CTnJCHA0y0ak',
+                    tid: 'd5e685a9-3e23-42d9-9efa-15cc5c1ce7db',
+                    //unique_name: 'ForrestGump@Gitcoins.onmicrosoft.com',
+                    //upn: 'ForrestGump@Gitcoins.onmicrosoft.com',
+                    uti: 'YCuQilrDeEeCWYCghqobAA',
+                    ver: '1.0'
+                };
+                user.account = account;
+                //user.timestamp = timestamp;
+                user.email = account + "@gitcons.io";
+                user.sub = account;
+                //user.mail = user.email;
+                //user.username = account;
+                //user.name = account;
+                //user.id = account;
+
+                console.log(user);
+                console.log(this.users.has(sign));
+                this.users.set(sign, user);
+                console.log(this.users.has(sign));
+                console.log(this.users.get(sign));
+
+                res.json(tokenResponse);
+
+            } else {
+                throw new Error('Verificaton Failure');
+            }
+        }
+    }
+
+    userinfo(options = {}) {
+        return (req, res, next) => {
+
+            console.log("hello from userinfo 1", req.headers);
+            const authHeader = req.headers.authorization;
+            console.log("hello from userinfo 2", authHeader);
+            console.log(authHeader);
+
+            let token = null;
+            if (authHeader && authHeader.startsWith('Bearer')) {
+                token = authHeader.split(' ')[1];
+            }
+
+            console.log(token);
+            console.log(this.users.has(token))
+            console.log(this.users.get(token));
+
+            if (token && this.users.has(token)) {
+                console.log("user info....");
+                console.log(this.users.get(token));
+                const user = this.users.get(token);
+                //To decide express
+                console.log("user info....", user);
+                res.json(user);
+            } else {
+                console("from eror....");
+                throw new Error('No user info');
+            }
         }
     }
 

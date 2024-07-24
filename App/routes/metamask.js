@@ -36,4 +36,8 @@ router.post('/token', authProvider.token({
     postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
 }));
 
+router.get('/userinfo', authProvider.userinfo({
+    postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
+}));
+
 module.exports = router;

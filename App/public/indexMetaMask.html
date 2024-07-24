@@ -5,7 +5,6 @@
   const sdk = new MetaMaskSDK.MetaMaskSDK({
     dappMetadata: {
       name: "RocketChat with MetaMask Oauth",
-      url: window.location.host,
     },
     logging: {
       sdk: false,
@@ -15,7 +14,7 @@
 <script>
   let provider;
 
-  function redirectTo(account) {
+  function redirectTo(stateSign) {
     const url = new URL(window.location.href);
     // Get the query parameters
     const params = new URLSearchParams(url.search);
@@ -24,12 +23,38 @@
         console.log(name, value);
     });
 
-    const redirectUrl = `${params.get('redirect_uri')}?code=${account}&state=${encodeURIComponent(params.get('state'))}`;
+    const state1 = params.get('state');
+    console.log("state1", state1);
+    const state2 = encodeURIComponent(params.get('state'));
+    console.log("state2", state2);
+
+    const redirectUrl = `${params.get('redirect_uri')}?code=${stateSign}&state=${encodeURIComponent(params.get('state'))}`;
     console.log(redirectUrl)
     window.location.href = redirectUrl;
   }
 
+  function getState() {
+    const url = new URL(window.location.href);
+    // Get the query parameters
+    const params = new URLSearchParams(url.search);
+
+    const state1 = params.get('state');
+    console.log("state1", state1);
+    return state1;
+  }
+
   function connect() {
+    sdk.connetAndSign({msg: "hello"})
+      .then((res) => {
+        console.log("Metamask before get provider");
+        provider = sdk.getProvider();
+        console.log("Metamask after get provider", res);
+        redirectTo(res);
+      })
+      .catch((e) => console.log('request accounts ERR', e));
+  }
+
+  function connect1() {
     sdk.connect()
       .then((res) => {
         console.log("Metamask before get provider");
@@ -39,6 +64,169 @@
       })
       .catch((e) => console.log('request accounts ERR', e));
   }
+
+  async function connect2() {
+    const state = getState();
+    const account = await sdk.connectAndSign({msg: state});
+    redirectTo(account);
+  }
+
+    /**
+   * Sign Typed Data V4
+   */
+   async function signTypedDataV4() {
+    const accounts = await sdk.connect();
+    console.log(accounts);
+
+    provider = sdk.getProvider();
+    const msgParams = {
+      domain: {
+        chainId: '0x1',
+        name: 'RocketChat Login',
+        verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+        version: '1',
+      },
+      message: {
+        contents: 'Hello, Bob!',
+        from: {
+          name: 'Cow',
+          wallets: [
+            '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826',
+            '0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF',
+          ],
+        },
+        to: [
+          {
+            name: 'Bob',
+            wallets: [
+              '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB',
+              '0xB0BdaBea57B0BDABeA57b0bdABEA57b0BDabEa57',
+              '0xB0B0b0b0b0b0B000000000000000000000000000',
+            ],
+          },
+        ],
+        attachment: '0x',
+      },
+      primaryType: 'Mail',
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+        ],
+        Group: [
+          { name: 'name', type: 'string' },
+          { name: 'members', type: 'Person[]' },
+        ],
+        Mail: [
+          { name: 'from', type: 'Person' },
+          { name: 'to', type: 'Person[]' },
+          { name: 'contents', type: 'string' },
+          { name: 'attachment', type: 'bytes' },
+        ],
+        Person: [
+          { name: 'name', type: 'string' },
+          { name: 'wallets', type: 'address[]' },
+        ],
+      },
+    };
+
+    try {
+      const from = accounts[0];
+      const sign = await provider.request({
+        method: 'eth_signTypedData_v4',
+        params: [from, JSON.stringify(msgParams)],
+      });
+      console.log(sign);
+      msgParams.account = from;
+      msgParams.sign = sign;
+      console.log(msgParams);
+
+      const searchParams = new URLSearchParams(msgParams);
+      console.log(searchParams.toString());
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  function redirectTo(timestamp, account, sign) {
+    const url = new URL(window.location.href);
+    // Get the query parameters
+    const params = new URLSearchParams(url.search);
+    // Iterate through all parameters
+    params.forEach((value, name) => {
+        console.log(name, value);
+    });
+
+    const state1 = params.get('state');
+    console.log("state1", state1);
+    const state2 = encodeURIComponent(params.get('state'));
+    console.log("state2", state2);
+
+    const code = [timestamp, account, sign].join('.');
+
+    console.log(code)
+    const redirectUrl = `${params.get('redirect_uri')}?code=${code}&state=${encodeURIComponent(params.get('state'))}`;
+    console.log(redirectUrl)
+    window.location.href = redirectUrl;
+  }
+
+
+  /**
+   * Sign Typed Data V4
+   */
+   async function generateCode () {
+    const accounts = await sdk.connect();
+    console.log(accounts);
+
+    provider = sdk.getProvider();
+    const msgParams = {
+      domain: {
+        chainId: '0x1',
+        name: 'RocketChat Login',
+        verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+        version: '1',
+      },
+      message: {
+        account: '0xABCD',
+        timestamp: 0,
+      },
+      primaryType: 'Code',
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+        ],
+        Code: [
+          { name: 'account', type: 'string' },
+          { name: 'timestamp', type: 'uint256' },
+        ],
+      },
+    };
+
+    try {
+      const from = accounts[0];
+      msgParams.message.account = from;
+      msgParams.message.timestamp = Math.floor(Date.now()/1000);
+      console.log(msgParams.message.account);
+      console.log(msgParams.message.timestamp);
+
+      const sign = await provider.request({
+        method: 'eth_signTypedData_v4',
+        params: [from, JSON.stringify(msgParams)],
+      });
+      console.log(sign);
+
+      redirectTo(msgParams.message.timestamp, from, sign);
+
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
 
   function addEthereumChain() {
     provider
@@ -58,5 +246,13 @@
       .catch((e) => console.log('ADD ERR', e));
   }
 
-  window.onload = connect;
+  // window.onload = () => {
+  //     (async () => {
+  //         await connect2();
+  //     })();
+  // };
+
+  //window.onload = signTypedDataV4;
+  //window.onload = connect3;
+  window.onload = generateCode;
 </script>
