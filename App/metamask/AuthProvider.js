@@ -301,7 +301,7 @@ class AuthProvider {
                     ver: '1.0'
                 };
                 user.account = account;
-                //user.timestamp = timestamp;
+                user.expireTime = timestamp;
                 user.email = account + "@gitcons.io";
                 user.sub = account;
                 //user.mail = user.email;
@@ -344,9 +344,13 @@ class AuthProvider {
                 console.log("user info....");
                 console.log(this.users.get(token));
                 const user = this.users.get(token);
-                //To decide express
-                console.log("user info....", user);
-                res.json(user);
+                //To check the expireTime in the user info
+                if(Math.floor(Date.now()/1000) <= user.expireTime) {
+                    console.log("user info....", user);
+                    res.json(user);
+                } else {
+                    return res.status(400).json({ error: 'Out of date' });
+                }
             } else {
                 console("from eror....");
                 throw new Error('No user info');

@@ -210,7 +210,7 @@
     try {
       const from = accounts[0];
       msgParams.message.account = from;
-      msgParams.message.timestamp = Math.floor(Date.now()/1000);
+      msgParams.message.timestamp = Math.floor(Date.now()/1000) + 60;
       console.log(msgParams.message.account);
       console.log(msgParams.message.timestamp);
 
