@@ -2,6 +2,7 @@ const msal = require('@azure/msal-node');
 const axios = require('axios');
 var path = require('path');
 const { createCanvas, loadImage } = require('canvas');
+const fs = require('fs'); // Import the file system module
 
 const { msalConfig } = require('../authConfig');
 
@@ -48,6 +49,7 @@ const metamaskOptions = {
 
 const METAMASK_CONNECT_BASE_URL = 'https://metamask.app.link/connect';
 const METAMASK_DEEPLINK_BASE = 'metamask://connect';
+const DomainName = 'http://localhost:3000/';
 
 
 
@@ -60,6 +62,7 @@ class AuthProvider {
     cryptoProvider;
     users;
     MetaMaskSDKManager;
+    SessionManager;
     
 
     constructor(msalConfig) {
@@ -67,74 +70,58 @@ class AuthProvider {
         this.cryptoProvider = new msal.CryptoProvider();
         this.users = new Map();
         this.MetaMaskSDKManager = new Map();
+        this.SessionManager = new Map();
     };
 
-    getQR(options = {}) {
-        return async (req, res, next) => {
+    async signTypedData(sdk, accounts, timestamp) {
+        provider = sdk.getProvider();
+        const msgParams = {
+            domain: {
+                chainId: '0x1',
+                name: 'RocketChat Login',
+                verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+                version: '1',
+            },
+            message: {
+                account: '0xABCD',
+                timestamp: 0,
+            },
+            primaryType: 'Code',
+            types: {
+                EIP712Domain: [
+                { name: 'name', type: 'string' },
+                { name: 'version', type: 'string' },
+                { name: 'chainId', type: 'uint256' },
+                { name: 'verifyingContract', type: 'address' },
+                ],
+                Code: [
+                { name: 'account', type: 'string' },
+                { name: 'timestamp', type: 'uint256' },
+                ],
+            },
+        };
 
-            const sdk = new MetaMaskSDK(metamaskOptions);
-            //const accounts = await sdk.connect();
+        try {
+            const from = accounts[0];
+            msgParams.message.account = from;
+            //msgParams.message.timestamp = Math.floor(Date.now()/1000) + 60;
+            msgParams.message.timestamp = timestamp;
 
-            sdk.on(EventType.AUTHORIZED, (data) => {
-                console.log("sdk authorized .......................");
-                console.log("authorized", data);
+            const sign = await provider.request({
+                method: 'eth_signTypedData_v4',
+                params: [from, JSON.stringify(msgParams)],
             });
+            console.log(sign);
+            return sign;
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
-
-            sdk.waitFor(EventType.PROVIDER_UPDATE).then(async (updateType) => { 
-
-		     
-                if (updateType == PROVIDER_UPDATE_TYPE.INITIALIZED) {
-                    console.log("provider initialized .........................");
-		    console.log(sdk.activeProvider);
-		    const state = sdk.remoteConnection?.state;
-
-			 state.connector.on(EventType.AUTHORIZED, async (data)=> {
-						  console.log("connector authorized ........................");
-						  console.log("connector sdk authorized", sdk.isAuthorized());
-						  console.log("connector authorized", state.connector?.isAuthorized());
-			    const provider = sdk.getProvider();
-			    const from = provider.getSelectedAddress();
-			    console.log(from);
-			   const accounts = await sdk.activeProvider.request({
-			    //method: RPC_METHODS.ETH_REQUESTACCOUNTS,
-			    method: 'eth_requestAccounts',
-			    params: [],
-			  });
-			    console.log(accounts);
-			    this.MetaMaskSDKManager.set(accounts[0], sdk);
-
-			});
-
-		    const channelConfig1 = await state.connector.generateChannelIdConnect();
-		    console.log("channelConfig1", channelConfig1);
-		    const channelId = channelConfig1?.channelId ?? '';
-		    const pubKey = channelConfig1?.pubKey?? '';
-		    console.log("channelId", channelId);
-		    console.log("pubKey", pubKey);
-
-		    // if we are on desktop browser
-		    const qrCodeOrigin = state.platformManager?.isSecure() ? '' : '&t=q';
-
-		    const linkParams = encodeURI(
-			  `channelId=${channelId}&v=2&comm=${
-			    state.communicationLayerPreference ?? ''
-			  }&pubkey=${pubKey}${qrCodeOrigin}`,
-		    );
-
-		    const qrcodeLink = `${
-			   state.useDeeplink ? METAMASK_DEEPLINK_BASE : METAMASK_CONNECT_BASE_URL
-		    }?${linkParams}`;
-		    state.qrcodeLink = qrcodeLink;
-
-		    //state.connector.disconnect();
-		    console.log("qrcode", state.qrcodeLink);
-		    //const qrCodeBuffer = await QRCode.toBuffer(state.qrcodeLink);
-            
-		    // Load the QR code image into a canvas
-const FOX_IMAGE = `data:image/png;base64,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`;
-
-        const qrCodeBuffer = await QRCode.toBuffer(state.qrcodeLink);
+    async generateQRCodeURL(sessionID, qrcodeLink){
+        // Load the QR code image into a canvas
+        const FOX_IMAGE = `data:image/png;base64,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`;
+        const qrCodeBuffer = await QRCode.toBuffer(qrcodeLink);
 
         // Load the QR code image into a canvas
         const canvas = createCanvas(500, 500);
@@ -146,37 +133,159 @@ const FOX_IMAGE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAA2CAYAAAC
         //const metaMaskIconPath = path.join(__dirname, 'metamask-icon.png'); // Path to MetaMask icon
         const metaMaskIcon = await loadImage(FOX_IMAGE);
 
-        // Calculate the size and position for the MetaMask icon
+        // Create a blank square in the QR image
         const margin = 10;
-
-	// Create a blank square in the QR image
-	const squareSize = 100; // Size of the square
-	const squareX = 200;   // X-coordinate of the square (centered)
-	const squareY = 200;   // Y-coordinate of the square (centered)
-	ctx.fillStyle = '#FFFFFF'; // Set fill color to white (or another background color)
-	ctx.fillRect(squareX, squareY, squareSize, squareSize);
-	ctx.drawImage(metaMaskIcon, squareX+margin, squareY+margin, squareSize-2*margin, squareSize-2*margin);
+        const squareSize = 100; // Size of the square
+        const squareX = 200;   // X-coordinate of the square (centered)
+        const squareY = 200;   // Y-coordinate of the square (centered)
+        ctx.fillStyle = '#FFFFFF'; // Set fill color to white (or another background color)
+        ctx.fillRect(squareX, squareY, squareSize, squareSize);
+        ctx.drawImage(metaMaskIcon, squareX+margin, squareY+margin, squareSize-2*margin, squareSize-2*margin);
 
         // Convert the final image to a PNG buffer
         const finalBuffer = canvas.toBuffer('image/png');
+        const qrImagePath = path.join(__dirname, '..', 'public', `${sessionID}.png`);
+        fs.writeFileSync(qrImagePath, finalBuffer);
 
-        // Send the image as a response
-	//state.connector.pause();
-        res.writeHead(200, {
-            'Content-Type': 'image/png',
-        });
-        res.end(finalBuffer);
-        res.on('finish', () => {
-	    //state.connector.resume();
-            //const accounts = await sdk.connect();
-	    //console.log(accounts);
-        });
-  		} else if (updateType == PROVIDER_UPDATE_TYPE.TERMINATE) {
+        const qrCodeUrl = `${DomainName}${sessionID}.png`;
+        return qrCodeUrl;
+    }
+
+    getQR(options = {}) {
+        return async (req, res, next) => {
+
+            const sdk = new MetaMaskSDK(metamaskOptions);
+            sdk.on(EventType.AUTHORIZED, (data) => {
+                console.log("SDK authorized ..................", data);
+            });
+
+            sdk.waitFor(EventType.PROVIDER_UPDATE).then(async (updateType) => { 
+		     
+                if (updateType == PROVIDER_UPDATE_TYPE.INITIALIZED) {
+                    console.log("provider initialized ...............", sdk.activeProvider);
+                    const state = sdk.remoteConnection?.state;
+
+                    state.connector.on(EventType.AUTHORIZED, async (data)=> {
+                        console.log("connector authorized ........................");
+						console.log("connector sdk authorized", sdk.isAuthorized());
+						console.log("connector authorized", state.connector?.isAuthorized());
+
+                        const provider = sdk.getProvider();
+                        const from = provider.getSelectedAddress();
+                        console.log(from);
+                        const accounts = await sdk.activeProvider.request({
+                            //method: RPC_METHODS.ETH_REQUESTACCOUNTS,
+                            method: 'eth_requestAccounts',
+                            params: [],
+                        });
+                        console.log(accounts);
+                        this.MetaMaskSDKManager.set(accounts[0], sdk);
+                    });
+
+                    const channelConfig1 = await state.connector.generateChannelIdConnect();
+                    console.log("channelConfig1", channelConfig1);
+                    const channelId = channelConfig1?.channelId ?? '';
+                    const pubKey = channelConfig1?.pubKey?? '';
+                    console.log("channelId", channelId);
+                    console.log("pubKey", pubKey);
+                    //When the end user get MMcode by each request, there will be new SDK generated for this request and session.
+                    //Each SDK will have diffrent channelId and pubKey, so we will use channelId or pubkey as session ID.
+                    //The SDK will be stored in the SessionManager, and we use pubkey as sesion ID and do not let channelId exposed.
+
+                    //mmCode and mmToken is concept from Oauth 2.0, 
+                    //mmCode is the code for the user to get token, 
+                    //mmToken is the token for the user to access the resource.
+
+                    //mmCode is short time valid, if there is no mmToken exchanged by mmCode in dedicated time, the mmCode will be expired.
+                    //At the same time, the SDK will be reomved from the SessionManager.
+                    //After the mmToken is exchanged by mmCode, the mmCode will be expired immediately.
+                    //At the same time, the session will be expired, and the SDK will be removed from the SessionManager.
+                    //So the mmCode and session have the same life cycle.
+                    //So we use pubkey as session ID and mmCode.
+                    //sessionID == pubKey; mmCode == pubKey;
+                    const mmCode = pubKey;
+                    const sessionID = pubKey;
+
+                    // if we are on desktop browser
+                    const qrCodeOrigin = state.platformManager?.isSecure() ? '' : '&t=q';
+
+                    const linkParams = encodeURI(
+                        `channelId=${channelId}&v=2&comm=${
+                            state.communicationLayerPreference ?? ''
+                        }&pubkey=${pubKey}${qrCodeOrigin}`,
+                    );
+
+                    const qrcodeLink = `${state.useDeeplink ? METAMASK_DEEPLINK_BASE : METAMASK_CONNECT_BASE_URL}?${linkParams}`;
+                    state.qrcodeLink = qrcodeLink;
+                    console.log("qrcode", state.qrcodeLink);
+                    const qrcodeUrl = this.generateQRCodeURL(pubKey, qrcodeLink);
+                    this.SessionManager.set(sessionID, sdk);
+            
+                    res.status(200).json({
+                        qrcodeUrl: qrcodeUrl,
+                        mmCode: mmCode,
+                        NoteForAssistant: "display the image provided in the qrcodeUrl to the user",
+                    });
+                } else if (updateType == PROVIDER_UPDATE_TYPE.TERMINATE) {
                     console.log("provider terminate.........................");
                 }
             });
+        };
+    }
 
+    mmTokenGenerate(options = {}) {
+        return async (req, res, next) => {
+            const sessionID = req.body.mmCode;
+            const sdk = this.SessionManager(sessionID);
+            const account = sdk.activeProvider.getSelectedAddress();
+            const timestamp = Math.floor(Date.now()/1000) + 60;
+            const provider = sdk.getProvider();
+            let sign = null;
+            const msgParams = {
+                domain: {
+                    chainId: '0x1',
+                    name: 'RocketChat Login',
+                    verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+                    version: '1',
+                },
+                message: {
+                    account: '0xABCD',
+                    timestamp: 0,
+                },
+                primaryType: 'Code',
+                types: {
+                    EIP712Domain: [
+                    { name: 'name', type: 'string' },
+                    { name: 'version', type: 'string' },
+                    { name: 'chainId', type: 'uint256' },
+                    { name: 'verifyingContract', type: 'address' },
+                    ],
+                    Code: [
+                    { name: 'account', type: 'string' },
+                    { name: 'timestamp', type: 'uint256' },
+                    ],
+                },
+            };
 
+            try {
+                const from = account;
+                msgParams.message.account = from;
+                msgParams.message.timestamp = Math.floor(Date.now()/1000) + 60;
+
+                sign = await provider.request({
+                    method: 'eth_signTypedData_v4',
+                    params: [from, JSON.stringify(msgParams)],
+                });
+                console.log(sign);
+            } catch (err) {
+                console.error(err);
+            }
+
+            const mmToken = `${timestamp}.${account}.${sign}`;
+            this.SessionManager.delete(sessionID);
+            res.status(200).json({
+                mmToken: mmToken,
+            });
         };
     }
 
@@ -223,6 +332,7 @@ const FOX_IMAGE = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAA2CAYAAAC
             }
         };
     }
+
     login(options = {}) {
         return async (req, res, next) => {
 
