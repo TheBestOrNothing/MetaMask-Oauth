@@ -40,4 +40,8 @@ router.get('/userinfo', authProvider.userinfo({
     postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
 }));
 
+router.get('/getQR', authProvider.getQR({
+    postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
+}));
+
 module.exports = router;
