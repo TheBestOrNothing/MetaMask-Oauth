@@ -49,7 +49,8 @@ const metamaskOptions = {
 
 const METAMASK_CONNECT_BASE_URL = 'https://metamask.app.link/connect';
 const METAMASK_DEEPLINK_BASE = 'metamask://connect';
-const DomainName = 'http://localhost:3000/';
+//const DomainName = 'http://localhost:3000/';
+const DomainName = 'https://3b6c-34-170-192-71.ngrok-free.app/';
 
 
 
@@ -148,6 +149,7 @@ class AuthProvider {
         fs.writeFileSync(qrImagePath, finalBuffer);
 
         const qrCodeUrl = `${DomainName}${sessionID}.png`;
+        console.log("qrCodeUrl xxxxxxxxx   xxxx xxx xxx xx", qrCodeUrl);
         return qrCodeUrl;
     }
 
@@ -179,7 +181,7 @@ class AuthProvider {
                             params: [],
                         });
                         console.log(accounts);
-                        this.MetaMaskSDKManager.set(accounts[0], sdk);
+                        //this.MetaMaskSDKManager.set(accounts[0], sdk);
                     });
 
                     const channelConfig1 = await state.connector.generateChannelIdConnect();
@@ -218,8 +220,10 @@ class AuthProvider {
                     const qrcodeLink = `${state.useDeeplink ? METAMASK_DEEPLINK_BASE : METAMASK_CONNECT_BASE_URL}?${linkParams}`;
                     state.qrcodeLink = qrcodeLink;
                     console.log("qrcode", state.qrcodeLink);
-                    const qrcodeUrl = this.generateQRCodeURL(pubKey, qrcodeLink);
+                    const qrcodeUrl = await this.generateQRCodeURL(pubKey, qrcodeLink);
+                    console.log("qrCodeUrl xxxxxxxxx   xxxx xxx xxx xx", qrcodeUrl);
                     this.SessionManager.set(sessionID, sdk);
+                    console.log("SessionManager", this.SessionManager.size);
             
                     res.status(200).json({
                         qrcodeUrl: qrcodeUrl,
@@ -235,8 +239,8 @@ class AuthProvider {
 
     mmTokenGenerate(options = {}) {
         return async (req, res, next) => {
-            const sessionID = req.body.mmCode;
-            const sdk = this.SessionManager(sessionID);
+            const sessionID = req.params.mmCode;
+            const sdk = this.SessionManager.get(sessionID);
             const account = sdk.activeProvider.getSelectedAddress();
             const timestamp = Math.floor(Date.now()/1000) + 60;
             const provider = sdk.getProvider();
@@ -283,6 +287,14 @@ class AuthProvider {
 
             const mmToken = `${timestamp}.${account}.${sign}`;
             this.SessionManager.delete(sessionID);
+            console.log("SessionManager size", this.SessionManager.size);
+            const qrImagePath = path.join(__dirname, '..', 'public', `${sessionID}.png`);
+            fs.unlink(qrImagePath, (err) => {   });
+            this.MetaMaskSDKManager.set(account, sdk);
+            console.log("MetaMaskManager size", this.MetaMaskSDKManager.size);
+            console.log("MetaMaskManager sdk", 
+                this.MetaMaskSDKManager.get(account).activeProvider.getSelectedAddress());
+
             res.status(200).json({
                 mmToken: mmToken,
             });

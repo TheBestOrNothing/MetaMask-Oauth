@@ -40,7 +40,11 @@ router.get('/userinfo', authProvider.userinfo({
     postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
 }));
 
-router.get('/getQR', authProvider.getQR({
+router.get('/mmCode', authProvider.getQR({
+    postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
+}));
+
+router.get('/mmToken/:mmCode', authProvider.mmTokenGenerate({
     postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
 }));
 
