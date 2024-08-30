@@ -9,6 +9,51 @@ const authProvider = require('../metamask/AuthProvider');
 const { REDIRECT_URI, POST_LOGOUT_REDIRECT_URI } = require('../authConfig');
 
 const router = express.Router();
+const base64url = require('base64url');
+const { toChecksumAddress } = require('ethereumjs-util');
+
+const {
+  encrypt,
+  recoverPersonalSignature,
+  recoverTypedSignature,
+} = require('@metamask/eth-sig-util');
+
+
+express.use(express.json());
+
+const verifyMetaMaskToken = (req, res, next) => {
+    // Check for the token in the request body
+    const mmToken = req.body.mmToken;  // Assuming the mmToken is sent under the 'token' key in the JSON body
+
+    if (mmToken && mmToken.split('.').length === 2) {
+        const parts = mmToken.split('.');
+        const msgParams = JSON.parse(base64url.decode(parts[0]));
+        const sign = parts[1];            
+        const from = msgParams.message.account;
+        const recoveredAddr = recoverTypedSignature({
+            data: msgParams,
+            signature: sign,
+            version: 'V4',
+        });
+
+        console.log(recoveredAddr);
+
+        if (toChecksumAddress(recoveredAddr) === toChecksumAddress(from)) {
+            console.log(`Successfully verified signer as ${recoveredAddr}`);
+            req.account = from;
+            next();
+        } else {
+            console.log(
+            `Failed to verify signer when comparing ${recoveredAddr} to ${from}`,
+            );
+            return res.redirect('/mmCode');
+        }
+
+    } else {
+        // If no token is present, redirect to get a new token
+        return res.redirect('/mmCode');
+    }
+};
 
 router.get('/signin', authProvider.login({
     scopes: [],
@@ -45,6 +90,10 @@ router.get('/mmCode', authProvider.getQR({
 }));
 
 router.get('/mmToken/:mmCode', authProvider.mmTokenGenerate({
+    postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
+}));
+
+router.get('/getSelectedAccount', verifyMetaMaskToken, authProvider.getSelectedAccount({
     postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
 }));
 

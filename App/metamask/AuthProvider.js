@@ -3,6 +3,9 @@ const axios = require('axios');
 var path = require('path');
 const { createCanvas, loadImage } = require('canvas');
 const fs = require('fs'); // Import the file system module
+const base64url = require('base64url');
+const { toChecksumAddress } = require('ethereumjs-util');
+const QRCode = require('qrcode');
 
 const { msalConfig } = require('../authConfig');
 
@@ -28,7 +31,6 @@ const {
     ConnectionStatus,
 } = require('@metamask/sdk-communication-layer');
 
-const QRCode = require('qrcode');
 
 const metamaskOptions = {
   shouldShimWeb3: false,
@@ -51,12 +53,6 @@ const METAMASK_CONNECT_BASE_URL = 'https://metamask.app.link/connect';
 const METAMASK_DEEPLINK_BASE = 'metamask://connect';
 //const DomainName = 'http://localhost:3000/';
 const DomainName = 'https://3b6c-34-170-192-71.ngrok-free.app/';
-
-
-
-const crypto = require('crypto');
-const { time } = require('console');
-const { toChecksumAddress } = require('ethereumjs-util');
 
 class AuthProvider {
     msalConfig;
@@ -240,6 +236,13 @@ class AuthProvider {
     mmTokenGenerate(options = {}) {
         return async (req, res, next) => {
             const sessionID = req.params.mmCode;
+            if(!this.SessionManager.has(sessionID)){
+                res.status(400).json({
+                    mmToken: null,
+                    NoteForAssistant: "the session is expired, please request a new MetaMask code",
+                });
+            }
+            
             const sdk = this.SessionManager.get(sessionID);
             const account = sdk.activeProvider.getSelectedAddress();
             const timestamp = Math.floor(Date.now()/1000) + 60;
@@ -285,7 +288,15 @@ class AuthProvider {
                 console.error(err);
             }
 
-            const mmToken = `${timestamp}.${account}.${sign}`;
+            //convert the msgParams and sign to MetaMask token
+            const msgParamsString = JSON.stringify(msgParams);
+            const msgParamsBase64Url = base64url(msgParamsString);
+            const msgParamsBase64Url2String = base64url.decode(msgParamsBase64Url);
+            const msgParamsJson = JSON.parse(msgParamsBase64Url2String);
+            console.log(msgParamsJson);
+
+            //const mmToken = `${timestamp}.${account}.${sign}`;
+            const mmToken = `${msgParamsBase64Url}.${sign}`;
             this.SessionManager.delete(sessionID);
             console.log("SessionManager size", this.SessionManager.size);
             const qrImagePath = path.join(__dirname, '..', 'public', `${sessionID}.png`);
@@ -298,6 +309,23 @@ class AuthProvider {
             res.status(200).json({
                 mmToken: mmToken,
             });
+        };
+    }
+
+    getSelectedAccount(options = {}) {
+        return async (req, res, next) => {
+            try {
+
+                const account = this.MetaMaskSDKManager.get(req.account).activeProvider.getSelectedAddress();
+                console.log("get account according to the mmToken", account);
+
+                res.status(200).json({
+                    account: account,
+                });
+
+            } catch (error) {
+            
+            }
         };
     }
 
