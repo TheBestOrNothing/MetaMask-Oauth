@@ -149,6 +149,151 @@ class AuthProvider {
         return qrCodeUrl;
     }
 
+    mmCode(options = {}) {
+        return async (req, res, next) => {
+
+            const sdk = new MetaMaskSDK(metamaskOptions);
+            sdk.on(EventType.AUTHORIZED, (data) => {
+                console.log("SDK authorized ..................", data);
+            });
+
+            sdk.waitFor(EventType.PROVIDER_UPDATE).then(async (updateType) => { 
+		     
+                if (updateType == PROVIDER_UPDATE_TYPE.INITIALIZED) {
+                    console.log("provider initialized ...............", sdk.activeProvider);
+                    const state = sdk.remoteConnection?.state;
+
+                    const channelConfig1 = await state.connector.generateChannelIdConnect();
+                    console.log("channelConfig1", channelConfig1);
+                    const channelId = channelConfig1?.channelId ?? '';
+                    const pubKey = channelConfig1?.pubKey?? '';
+                    console.log("channelId", channelId);
+                    console.log("pubKey", pubKey);
+
+                    const mmCode = pubKey;
+                    const sessionID = pubKey;
+
+                    // if we are on desktop browser
+                    const qrCodeOrigin = state.platformManager?.isSecure() ? '' : '&t=q';
+
+                    const linkParams = encodeURI(
+                        `channelId=${channelId}&v=2&comm=${
+                            state.communicationLayerPreference ?? ''
+                        }&pubkey=${pubKey}${qrCodeOrigin}`,
+                    );
+
+                    const qrcodeLink = `${state.useDeeplink ? METAMASK_DEEPLINK_BASE : METAMASK_CONNECT_BASE_URL}?${linkParams}`;
+                    state.qrcodeLink = qrcodeLink;
+                    console.log("qrcode", state.qrcodeLink);
+                    const qrcodeUrl = await this.generateQRCodeURL(pubKey, qrcodeLink);
+                    //console.log("qrCodeUrl xxxxxxxxx   xxxx xxx xxx xx", qrcodeUrl);
+                    this.SessionManager.set(sessionID, sdk);
+                    console.log("SessionManager", this.SessionManager.size);
+            
+                    res.status(200).json({
+                        qrcodeUrl: qrcodeUrl,
+                        mmCode: mmCode,
+                        NoteForAssistant: "display the image provided in the qrcodeUrl to the user",
+                    });
+                } else if (updateType == PROVIDER_UPDATE_TYPE.TERMINATE) {
+                    console.log("provider terminate.........................");
+                }
+            });
+        };
+    }
+
+    mmToken(options = {}) {
+        return async (req, res, next) => {
+            const sessionID = req.params.mmCode;
+            if(!this.SessionManager.has(sessionID)){
+                res.status(400).json({
+                    mmToken: null,
+                    NoteForAssistant: "the session is expired, please request a new MetaMask code",
+                });
+            }
+            
+            const sdk = this.SessionManager.get(sessionID);
+            const state = sdk.remoteConnection?.state;
+            const connector = state.connector;
+            let account;
+            let provider;
+
+            console.log("start to waiting scan qr code and authorizing process ........................");
+            connector.waitFor(EventType.AUTHORIZED).then(async (data) => { 
+            //state.connector.on(EventType.AUTHORIZED, async (data)=> {
+                console.log("connector authorized ........................");
+                console.log("connector sdk authorized", sdk.isAuthorized());
+                console.log("connector authorized", state.connector?.isAuthorized());
+
+                provider = sdk.getProvider();
+                const accounts = await sdk.activeProvider.request({
+                    //method: RPC_METHODS.ETH_REQUESTACCOUNTS,
+                    method: 'eth_requestAccounts',
+                    params: [],
+                });
+                account = accounts[0];
+                console.log(account);
+            });
+
+            //const account = sdk.activeProvider.getSelectedAddress();
+            const timestamp = Math.floor(Date.now()/1000) + 60;
+            let sign = null;
+            const msgParams = {
+                domain: {
+                    chainId: '0x1',
+                    name: 'RocketChat Login',
+                    verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+                    version: '1',
+                },
+                message: {
+                    account: account,
+                    timestamp: timestamp,
+                },
+                primaryType: 'Code',
+                types: {
+                    EIP712Domain: [
+                    { name: 'name', type: 'string' },
+                    { name: 'version', type: 'string' },
+                    { name: 'chainId', type: 'uint256' },
+                    { name: 'verifyingContract', type: 'address' },
+                    ],
+                    Code: [
+                    { name: 'account', type: 'string' },
+                    { name: 'timestamp', type: 'uint256' },
+                    ],
+                },
+            };
+
+            try {
+                sign = await provider.request({
+                    method: 'eth_signTypedData_v4',
+                    params: [account, JSON.stringify(msgParams)],
+                });        
+
+                console.log(sign);
+
+            } catch (err) {
+                console.error(err);
+            }
+
+            
+            const mmToken = `${timestamp}.${account}.${sign}`;
+            //const mmToken = `${msgParamsBase64Url}.${sign}`;
+            this.SessionManager.delete(sessionID);
+            console.log("SessionManager size", this.SessionManager.size);
+            const qrImagePath = path.join(__dirname, '..', 'public', `${sessionID}.png`);
+            fs.unlink(qrImagePath, (err) => {   });
+            this.MetaMaskSDKManager.set(account, sdk);
+            console.log("MetaMaskManager size", this.MetaMaskSDKManager.size);
+            console.log("MetaMaskManager sdk", 
+                this.MetaMaskSDKManager.get(account).activeProvider.getSelectedAddress());
+
+            res.status(200).json({
+                mmToken: mmToken,
+            });
+        };
+    }
+
     getQR(options = {}) {
         return async (req, res, next) => {
 

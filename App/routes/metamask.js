@@ -119,11 +119,13 @@ router.get('/userinfo', authProvider.userinfo({
     postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
 }));
 
-router.get('/mmCode', authProvider.getQR({
+//router.get('/mmCode', authProvider.getQR({
+router.get('/mmCode', authProvider.mmCode({
     postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
 }));
 
-router.get('/mmToken/:mmCode', authProvider.mmTokenGenerate({
+//router.get('/mmToken/:mmCode', authProvider.mmTokenGenerate({
+router.get('/mmToken/:mmCode', authProvider.mmToken({
     postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
 }));
 
