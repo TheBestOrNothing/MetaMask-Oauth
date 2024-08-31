@@ -256,8 +256,8 @@ class AuthProvider {
                     version: '1',
                 },
                 message: {
-                    account: '0xABCD',
-                    timestamp: 0,
+                    account: account,
+                    timestamp: timestamp,
                 },
                 primaryType: 'Code',
                 types: {
@@ -275,28 +275,20 @@ class AuthProvider {
             };
 
             try {
-                const from = account;
-                msgParams.message.account = from;
-                msgParams.message.timestamp = Math.floor(Date.now()/1000) + 60;
-
                 sign = await provider.request({
                     method: 'eth_signTypedData_v4',
-                    params: [from, JSON.stringify(msgParams)],
-                });
+                    params: [account, JSON.stringify(msgParams)],
+                });        
+
                 console.log(sign);
+
             } catch (err) {
                 console.error(err);
             }
 
-            //convert the msgParams and sign to MetaMask token
-            const msgParamsString = JSON.stringify(msgParams);
-            const msgParamsBase64Url = base64url(msgParamsString);
-            const msgParamsBase64Url2String = base64url.decode(msgParamsBase64Url);
-            const msgParamsJson = JSON.parse(msgParamsBase64Url2String);
-            console.log(msgParamsJson);
-
-            //const mmToken = `${timestamp}.${account}.${sign}`;
-            const mmToken = `${msgParamsBase64Url}.${sign}`;
+            
+            const mmToken = `${timestamp}.${account}.${sign}`;
+            //const mmToken = `${msgParamsBase64Url}.${sign}`;
             this.SessionManager.delete(sessionID);
             console.log("SessionManager size", this.SessionManager.size);
             const qrImagePath = path.join(__dirname, '..', 'public', `${sessionID}.png`);
@@ -315,6 +307,7 @@ class AuthProvider {
     getSelectedAccount(options = {}) {
         return async (req, res, next) => {
             try {
+                console.log("hello from getSelectedAccount");
 
                 const account = this.MetaMaskSDKManager.get(req.account).activeProvider.getSelectedAddress();
                 console.log("get account according to the mmToken", account);
