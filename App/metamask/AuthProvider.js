@@ -30,6 +30,7 @@ const {
     RemoteCommunication,
     ConnectionStatus,
 } = require('@metamask/sdk-communication-layer');
+const { type } = require('os');
 
 
 const metamaskOptions = {
@@ -149,13 +150,57 @@ class AuthProvider {
         return qrCodeUrl;
     }
 
+    async tokenGenerate(sdk, account, timestamp) {
+        const provider = sdk.getProvider();
+        let sign = null;
+        const msgParams = {
+            domain: {
+                chainId: '0x1',
+                name: 'RocketChat Login',
+                verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+                version: '1',
+            },
+            message: {
+                account: account,
+                timestamp: timestamp,
+            },
+            primaryType: 'Code',
+            types: {
+                EIP712Domain: [
+                { name: 'name', type: 'string' },
+                { name: 'version', type: 'string' },
+                { name: 'chainId', type: 'uint256' },
+                { name: 'verifyingContract', type: 'address' },
+                ],
+                Code: [
+                { name: 'account', type: 'string' },
+                { name: 'timestamp', type: 'uint256' },
+                ],
+            },
+        };
+
+        try {
+            sign = await provider.request({
+                method: 'eth_signTypedData_v4',
+                params: [account, JSON.stringify(msgParams)],
+            });        
+
+            console.log(sign);
+        } catch (err) {
+            console.error(err);
+        }
+
+        //Why not following code with base64url not stable ??
+        //const msgParamsBase64Url = base64url.encode(JSON.stringify(msgParams));
+        //const mmToken = `${msgParamsBase64Url}.${sign}`;
+        const mmToken = `${timestamp}.${account}.${sign}`;
+        return mmToken;
+    }
+
     mmCode(options = {}) {
         return async (req, res, next) => {
 
             const sdk = new MetaMaskSDK(metamaskOptions);
-            sdk.on(EventType.AUTHORIZED, (data) => {
-                console.log("SDK authorized ..................", data);
-            });
 
             sdk.waitFor(EventType.PROVIDER_UPDATE).then(async (updateType) => { 
 		     
@@ -163,13 +208,41 @@ class AuthProvider {
                     console.log("provider initialized ...............", sdk.activeProvider);
                     const state = sdk.remoteConnection?.state;
 
+                    state.connector.on(EventType.AUTHORIZED, async (data)=> {
+                        console.log("connector authorized ........................");
+						console.log("connector sdk authorized", sdk.isAuthorized());
+						console.log("connector authorized", state.connector?.isAuthorized());
+
+                        const provider = sdk.getProvider();
+                        const accounts = await sdk.activeProvider.request({
+                            //method: RPC_METHODS.ETH_REQUESTACCOUNTS,
+                            method: 'eth_requestAccounts',
+                            params: [],
+                        });
+                        console.log(accounts);
+                    });
+
                     const channelConfig1 = await state.connector.generateChannelIdConnect();
                     console.log("channelConfig1", channelConfig1);
                     const channelId = channelConfig1?.channelId ?? '';
                     const pubKey = channelConfig1?.pubKey?? '';
                     console.log("channelId", channelId);
                     console.log("pubKey", pubKey);
+                    //When the end user get MMcode by each request, there will be new SDK generated for this request and session.
+                    //Each SDK will have diffrent channelId and pubKey, so we will use channelId or pubkey as session ID.
+                    //The SDK will be stored in the SessionManager, and we use pubkey as sesion ID and do not let channelId exposed.
 
+                    //mmCode and mmToken is concept from Oauth 2.0, 
+                    //mmCode is the code for the user to get token, 
+                    //mmToken is the token for the user to access the resource.
+
+                    //mmCode is short time valid, if there is no mmToken exchanged by mmCode in dedicated time, the mmCode will be expired.
+                    //At the same time, the SDK will be reomved from the SessionManager.
+                    //After the mmToken is exchanged by mmCode, the mmCode will be expired immediately.
+                    //At the same time, the session will be expired, and the SDK will be removed from the SessionManager.
+                    //So the mmCode and session have the same life cycle.
+                    //So we use pubkey as session ID and mmCode.
+                    //sessionID == pubKey; mmCode == pubKey;
                     const mmCode = pubKey;
                     const sessionID = pubKey;
 
@@ -186,9 +259,16 @@ class AuthProvider {
                     state.qrcodeLink = qrcodeLink;
                     console.log("qrcode", state.qrcodeLink);
                     const qrcodeUrl = await this.generateQRCodeURL(pubKey, qrcodeLink);
-                    //console.log("qrCodeUrl xxxxxxxxx   xxxx xxx xxx xx", qrcodeUrl);
-                    this.SessionManager.set(sessionID, sdk);
+                    console.log("qrCodeUrl xxxxxxxxx   xxxx xxx xxx xx", qrcodeUrl);
+                    //The session will be expired at most 10 minutes.
+                    const expireTime = Math.floor(Date.now()/1000) + 10 * 60;
+                    const sessionMsg = {
+                        sdk: sdk,
+                        expireTime: expireTime,
+                    }
+                    this.SessionManager.set(sessionID, sessionMsg);
                     console.log("SessionManager", this.SessionManager.size);
+                    console.log("sessionMsg in SessionManager", this.SessionManager.get(sessionID));
             
                     res.status(200).json({
                         qrcodeUrl: qrcodeUrl,
@@ -204,92 +284,56 @@ class AuthProvider {
 
     mmToken(options = {}) {
         return async (req, res, next) => {
-            const sessionID = req.params.mmCode;
+            const { mmCode, duration} = req.body;
+            const sessionID = mmCode;
+            console.log("sessionID", sessionID);
             if(!this.SessionManager.has(sessionID)){
-                res.status(400).json({
+                return res.status(400).json({
                     mmToken: null,
                     NoteForAssistant: "the session is expired, please request a new MetaMask code",
                 });
             }
-            
-            const sdk = this.SessionManager.get(sessionID);
-            const state = sdk.remoteConnection?.state;
-            const connector = state.connector;
-            let account;
-            let provider;
 
-            console.log("start to waiting scan qr code and authorizing process ........................");
-            connector.waitFor(EventType.AUTHORIZED).then(async (data) => { 
-            //state.connector.on(EventType.AUTHORIZED, async (data)=> {
-                console.log("connector authorized ........................");
-                console.log("connector sdk authorized", sdk.isAuthorized());
-                console.log("connector authorized", state.connector?.isAuthorized());
-
-                provider = sdk.getProvider();
-                const accounts = await sdk.activeProvider.request({
-                    //method: RPC_METHODS.ETH_REQUESTACCOUNTS,
-                    method: 'eth_requestAccounts',
-                    params: [],
+            //console.log("sdkmsg in the session manager", this.SessionManager.get(sessionID));
+            const sdk = this.SessionManager.get(sessionID).sdk;
+            const account = sdk.activeProvider.getSelectedAddress();
+            if(!account){
+                return res.status(400).json({
+                    mmToken: null,
+                    NoteForAssistant: "Please scan the QR code to connect to MetaMask first",
                 });
-                account = accounts[0];
-                console.log(account);
-            });
-
-            //const account = sdk.activeProvider.getSelectedAddress();
-            const timestamp = Math.floor(Date.now()/1000) + 60;
-            let sign = null;
-            const msgParams = {
-                domain: {
-                    chainId: '0x1',
-                    name: 'RocketChat Login',
-                    verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
-                    version: '1',
-                },
-                message: {
-                    account: account,
-                    timestamp: timestamp,
-                },
-                primaryType: 'Code',
-                types: {
-                    EIP712Domain: [
-                    { name: 'name', type: 'string' },
-                    { name: 'version', type: 'string' },
-                    { name: 'chainId', type: 'uint256' },
-                    { name: 'verifyingContract', type: 'address' },
-                    ],
-                    Code: [
-                    { name: 'account', type: 'string' },
-                    { name: 'timestamp', type: 'uint256' },
-                    ],
-                },
-            };
-
-            try {
-                sign = await provider.request({
-                    method: 'eth_signTypedData_v4',
-                    params: [account, JSON.stringify(msgParams)],
-                });        
-
-                console.log(sign);
-
-            } catch (err) {
-                console.error(err);
             }
 
-            
-            const mmToken = `${timestamp}.${account}.${sign}`;
-            //const mmToken = `${msgParamsBase64Url}.${sign}`;
+            //The duration is the time for the mmToken to be expired.
+            //The duration is in minutes, should be int.
+            //The duration is optional, if not provided, the default duration is 2 hours.
+            let expireTime;
+            if(!duration || typeof duration !== 'number'){
+                //default 2 hours 
+                expireTime = Math.floor(Date.now()/1000) + 120 * 60;
+            } else {
+                expireTime = Math.floor(Date.now()/1000) + duration * 60;
+            }
+
+            //mmToken generation
+            const mmToken = await this.tokenGenerate(sdk, account, expireTime);
+            const sdkMsg = {
+                selectedAccount: account,
+                sdk: sdk,
+                expireTime: expireTime,
+            };
+            this.MetaMaskSDKManager.set(account, sdkMsg);
+
+            //Delete the session after the mmToken is generated.
+            //Remove the sdk from the SessionManager.
             this.SessionManager.delete(sessionID);
             console.log("SessionManager size", this.SessionManager.size);
             const qrImagePath = path.join(__dirname, '..', 'public', `${sessionID}.png`);
             fs.unlink(qrImagePath, (err) => {   });
-            this.MetaMaskSDKManager.set(account, sdk);
-            console.log("MetaMaskManager size", this.MetaMaskSDKManager.size);
-            console.log("MetaMaskManager sdk", 
-                this.MetaMaskSDKManager.get(account).activeProvider.getSelectedAddress());
 
             res.status(200).json({
                 mmToken: mmToken,
+                NoteForAssistant: "use mmToken to access the resource in the provider",
             });
         };
     }
@@ -298,9 +342,6 @@ class AuthProvider {
         return async (req, res, next) => {
 
             const sdk = new MetaMaskSDK(metamaskOptions);
-            sdk.on(EventType.AUTHORIZED, (data) => {
-                console.log("SDK authorized ..................", data);
-            });
 
             sdk.waitFor(EventType.PROVIDER_UPDATE).then(async (updateType) => { 
 		     
@@ -314,8 +355,6 @@ class AuthProvider {
 						console.log("connector authorized", state.connector?.isAuthorized());
 
                         const provider = sdk.getProvider();
-                        const from = provider.getSelectedAddress();
-                        console.log(from);
                         const accounts = await sdk.activeProvider.request({
                             //method: RPC_METHODS.ETH_REQUESTACCOUNTS,
                             method: 'eth_requestAccounts',
@@ -454,7 +493,7 @@ class AuthProvider {
             try {
                 console.log("hello from getSelectedAccount");
 
-                const account = this.MetaMaskSDKManager.get(req.account).activeProvider.getSelectedAddress();
+                const account = this.MetaMaskSDKManager.get(req.account).sdk.activeProvider.getSelectedAddress();
                 console.log("get account according to the mmToken", account);
 
                 res.status(200).json({

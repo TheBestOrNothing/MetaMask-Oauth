@@ -29,12 +29,17 @@ const verifyMetaMaskToken = (req, res, next) => {
         console.log("in the if statement");
         const parts = mmToken.split('.');
 
-        const timestamp = parts[0];
+        const timestampStr = parts[0];
         const account = parts[1];
         const sign = parts[2];
 
-        const time = BigInt(timestamp);
-        console.log(time.toString());
+        const timestamp = BigInt(timestampStr);
+
+        let timeout = false;
+        if(Math.floor(Date.now()/1000) > timestamp) {
+            // Token has expired, terminate the session and remove from MetaMaskSDKManager
+            timeout = true;
+        }
 
         const msgParams = {
             domain: {
@@ -45,7 +50,7 @@ const verifyMetaMaskToken = (req, res, next) => {
             },
             message: {
               account: account,
-              timestamp: time,
+              timestamp: timestamp,
             },
             primaryType: 'Code',
             types: {
@@ -71,21 +76,25 @@ const verifyMetaMaskToken = (req, res, next) => {
 
             console.log(recoveredAddr);
 
-            if (toChecksumAddress(recoveredAddr) === toChecksumAddress(account)) {
+            if (!timeout && toChecksumAddress(recoveredAddr) === toChecksumAddress(account)) {
                 console.log(`Successfully verified signer as ${recoveredAddr}`);
                 req.account = account;
                 next();
             } else {
-                console.log(`Failed to verify signer when comparing ${recoveredAddr} to ${from}`);
-                return res.redirect('/mmCode');
+                if(timeout) {   // Token has expired
+                    console.log(`Token has expired`);
+                } else {
+                    console.log(`Failed to verify signer when comparing ${recoveredAddr} to ${from}`);
+                }
+                return res.redirect('/metamask/mmCode');
             }
         } catch (e) {
             console.error(e);
-            return res.redirect('/mmCode');
+            return res.redirect('/metamask/mmCode');
         }
     } else {
         // If no token is present, redirect to get a new token
-        return res.redirect('/mmCode');
+        return res.redirect('/metamask/mmCode');
     }
 };
 
@@ -125,7 +134,7 @@ router.get('/mmCode', authProvider.mmCode({
 }));
 
 //router.get('/mmToken/:mmCode', authProvider.mmTokenGenerate({
-router.get('/mmToken/:mmCode', authProvider.mmToken({
+router.post('/mmToken', authProvider.mmToken({
     postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI
 }));
 
