@@ -3,11 +3,18 @@ const axios = require('axios');
 var path = require('path');
 const { createCanvas, loadImage } = require('canvas');
 const fs = require('fs'); // Import the file system module
-const base64url = require('base64url');
+//const base64url = require('base64url');
 const { toChecksumAddress } = require('ethereumjs-util');
 const QRCode = require('qrcode');
 
 const { msalConfig } = require('../authConfig');
+const publicKeyToAddress = require('ethereum-public-key-to-address');
+const jose = require('jose');
+const crypto = require('crypto');
+//const { base64url } = require('jose/util/base64url');
+const secp = require('noble-secp256k1');
+//const { testJWT, genJWTByNode } = require('./jwt.js');
+const  getMsgParams = require('./jwt.js');
 
 const {
   encrypt,
@@ -31,6 +38,9 @@ const {
     ConnectionStatus,
 } = require('@metamask/sdk-communication-layer');
 const { type } = require('os');
+const { sign } = require('crypto');
+const exp = require('constants');
+const { get } = require('http');
 
 
 const metamaskOptions = {
@@ -40,8 +50,8 @@ const metamaskOptions = {
     name: 'NodeJS example',
   },
   logging: {
-    sdk: true,
-    //sdk: false,
+    //sdk: true,
+    sdk: false,
   },
   storage: {
     enabled: false
@@ -53,7 +63,9 @@ const metamaskOptions = {
 const METAMASK_CONNECT_BASE_URL = 'https://metamask.app.link/connect';
 const METAMASK_DEEPLINK_BASE = 'metamask://connect';
 //const DomainName = 'http://localhost:3000/';
-const DomainName = 'https://3b6c-34-170-192-71.ngrok-free.app/';
+//const DomainName = 'https://3b6c-34-170-192-71.ngrok-free.app/';
+const DomainName = 'https://a588-34-170-192-71.ngrok-free.app/';
+let jwtData = "";
 
 class AuthProvider {
     msalConfig;
@@ -70,6 +82,150 @@ class AuthProvider {
         this.MetaMaskSDKManager = new Map();
         this.SessionManager = new Map();
     };
+
+    async testJWT1() {
+        //await getAddressbyPrivateKey();
+        const { publicKey, privateKey } = await jose.generateKeyPair('ES256K');
+
+        // Export the public key in jwk format
+        const exportedPublicKey = publicKey.export({
+            type: 'spki',
+            format: 'jwk'
+        });
+
+        // Export the private key in jwk format
+        let exportedPrivateKey = privateKey.export({
+            type: 'sec1',
+            format: 'jwk'
+        });
+        console.log(exportedPublicKey);
+        console.log(exportedPrivateKey);
+
+        const xHex = Buffer.from(exportedPublicKey.x, 'base64url').toString('hex');
+        const yHex = Buffer.from(exportedPublicKey.y, 'base64url').toString('hex');
+        let dHex = Buffer.from(exportedPrivateKey.d, 'base64url').toString('hex');
+        console.log(xHex.length);
+        console.log(yHex.length);
+        console.log(dHex);
+
+        const uncompressedPublicKey = `04${xHex}${yHex}`;
+        const address = publicKeyToAddress(uncompressedPublicKey);
+        console.log(address);
+
+        //{
+        //        kty: 'EC',
+        //        x: '2QEVXJBpeCRdIG4HlMiOxcthoUxPlpc5qYmPjbAF2b0',
+        //        y: 'onJDpWsKJ_uFzvA3RiMPQ_3TJwWSgejSVtNdrWx_HKo',
+        //        crv: 'secp256k1',
+        //        d: 'x1p07QZHIKvbk5kic6Kj48ZnDL5Yy_svPVBZzn0VMoU'
+        //}
+        //c75a74ed064720abdb93992273a2a3e3c6670cbe58cbfb2f3d5059ce7d153285
+        //0x4477610799E7910F0e40F64dA702aa9fFcF929ac
+
+        const importedPrivateKeyHex = "c75a74ed064720abdb93992273a2a3e3c6670cbe58cbfb2f3d5059ce7d153285";
+        const importedPrivateKeyBase64url = Buffer.from(importedPrivateKeyHex, 'hex').toString('base64url');
+        console.log(importedPrivateKeyBase64url);
+
+        const importedPrivateKeyJWK = await jose.importJWK(
+            {
+                kty: 'EC',
+                x: '2QEVXJBpeCRdIG4HlMiOxcthoUxPlpc5qYmPjbAF2b0',
+                y: 'onJDpWsKJ_uFzvA3RiMPQ_3TJwWSgejSVtNdrWx_HKo',
+                crv: 'secp256k1',
+                d: 'x1p07QZHIKvbk5kic6Kj48ZnDL5Yy_svPVBZzn0VMoU'
+            },
+            'ES256K',
+        );
+
+        const jwt = await new jose.SignJWT({ 'urn:example:claim': true })
+            .setProtectedHeader({ alg: 'ES256K' })
+            .setIssuedAt()
+            .setIssuer('urn:example:issuer')
+            .setAudience('urn:example:audience')
+            .setExpirationTime('2h')
+            .sign(importedPrivateKeyJWK)
+
+        exportedPrivateKey = importedPrivateKeyJWK.export({
+            type: 'sec1',
+            format: 'jwk'
+        });
+        dHex = Buffer.from(exportedPrivateKey.d, 'base64url').toString('hex');
+
+        const { payload, protectedHeader } = await jose.jwtVerify(jwt, importedPrivateKeyJWK, {
+            issuer: 'urn:example:issuer',
+            audience: 'urn:example:audience',
+        });
+
+        console.log("....................................................");
+        console.log(protectedHeader);
+        console.log(payload);
+        console.log("privateKey hex:");
+        console.log(dHex);
+        console.log("JWT:");
+        console.log(jwt);
+        console.log("");
+
+
+        // Convert header and payload to base64url-encoded strings
+        const encodedHeader = Buffer.from(JSON.stringify(protectedHeader)).toString('base64url');
+        const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+        console.log(encodedHeader);
+        console.log(encodedPayload);
+
+        // Create the data to be signed (header and payload)
+        const dataToSign = `${encodedHeader}.${encodedPayload}`;
+        jwtData = dataToSign;
+
+        const dataToSignUint8array = new TextEncoder().encode(dataToSign);
+        // Generate a private key (for example purposes, you might want to use an existing private key)
+        // const privateKey = secp.utils.randomPrivateKey();
+        // Convert the private key from hex string to a byte array
+        // Validate the private key
+        if (!secp.utils.isValidPrivateKey(dHex)) {
+            throw new Error('Invalid private key');
+        }
+
+        // Hash the data using SHA-256 (required before signing with secp256k1)
+        const hashedDataUint8Array = await secp.utils.sha256(dataToSignUint8array);
+
+        // Sign the hashed data
+        const signatureUint8Array = await secp.sign(hashedDataUint8Array, dHex);
+        const signatureBase64url = Buffer.from(signatureUint8Array).toString('base64url')
+        console.log(signatureBase64url);
+
+        // Combine header, payload, and signature to form the JWT
+        const jwt1 = `${dataToSign}.${signatureBase64url}`;
+
+        console.log('JWT regenerated:');
+        console.log(jwt1);
+        console.log("....................................................");
+    };
+
+    async jwtSign(sdk, account) {
+        const provider = sdk.getProvider();
+
+        try {
+            const dataToSignUint8array = new TextEncoder().encode(jwtData);
+            const dataToSignHex = Buffer.from(dataToSignUint8array).toString('hex');
+            const msg = `0x${dataToSignHex}`;
+            const sign = await provider.request({
+                method: 'personal_sign',
+                params: [msg, account],
+            });
+            console.log("jwtData:", jwtData);
+            console.log('new signment:');
+            console.warn(sign);
+            console.log('new signment base64url:');
+            console.warn(Buffer.from(sign.slice(2), 'hex').toString('base64url'));
+
+        } catch (err) {
+            console.error(err);
+        }
+
+        //Why not following code with base64url not stable ??
+        //const msgParamsBase64Url = base64url.encode(JSON.stringify(msgParams));
+        //const mmToken = `${msgParamsBase64Url}.${sign}`;
+    }
 
     async signTypedData(sdk, accounts, timestamp) {
         provider = sdk.getProvider();
@@ -150,34 +306,14 @@ class AuthProvider {
         return qrCodeUrl;
     }
 
-    async tokenGenerate(sdk, account, timestamp) {
+    async tokenGenerate(sdk, account, expireTime) {
         const provider = sdk.getProvider();
         let sign = null;
-        const msgParams = {
-            domain: {
-                chainId: '0x1',
-                name: 'RocketChat Login',
-                verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
-                version: '1',
-            },
-            message: {
-                account: account,
-                timestamp: timestamp,
-            },
-            primaryType: 'Code',
-            types: {
-                EIP712Domain: [
-                { name: 'name', type: 'string' },
-                { name: 'version', type: 'string' },
-                { name: 'chainId', type: 'uint256' },
-                { name: 'verifyingContract', type: 'address' },
-                ],
-                Code: [
-                { name: 'account', type: 'string' },
-                { name: 'timestamp', type: 'uint256' },
-                ],
-            },
-        };
+
+        // Convert to ISO 8601 string
+        const dateObject = new Date(expireTime); 
+        const isoString = dateObject.toISOString();
+        const msgParams = getMsgParams(account, expireTime);
 
         try {
             sign = await provider.request({
@@ -193,19 +329,19 @@ class AuthProvider {
         //Why not following code with base64url not stable ??
         //const msgParamsBase64Url = base64url.encode(JSON.stringify(msgParams));
         //const mmToken = `${msgParamsBase64Url}.${sign}`;
-        const mmToken = `${timestamp}.${account}.${sign}`;
+        const mmToken = `${expireTime}.${account}.${sign}`;
         return mmToken;
     }
 
     mmCode(options = {}) {
         return async (req, res, next) => {
-
             const sdk = new MetaMaskSDK(metamaskOptions);
+            //genJWTByNode();
 
             sdk.waitFor(EventType.PROVIDER_UPDATE).then(async (updateType) => { 
 		     
                 if (updateType == PROVIDER_UPDATE_TYPE.INITIALIZED) {
-                    console.log("provider initialized ...............", sdk.activeProvider);
+                    //console.log("provider initialized ...............", sdk.activeProvider);
                     const state = sdk.remoteConnection?.state;
 
                     state.connector.on(EventType.AUTHORIZED, async (data)=> {
@@ -267,8 +403,8 @@ class AuthProvider {
                         expireTime: expireTime,
                     }
                     this.SessionManager.set(sessionID, sessionMsg);
-                    console.log("SessionManager", this.SessionManager.size);
-                    console.log("sessionMsg in SessionManager", this.SessionManager.get(sessionID));
+                    //console.log("SessionManager", this.SessionManager.size);
+                    //console.log("sessionMsg in SessionManager", this.SessionManager.get(sessionID));
             
                     res.status(200).json({
                         qrcodeUrl: qrcodeUrl,
@@ -308,13 +444,18 @@ class AuthProvider {
             //The duration is in minutes, should be int.
             //The duration is optional, if not provided, the default duration is 2 hours.
             let expireTime;
+            const dateObject = new Date();
             if(!duration || typeof duration !== 'number'){
-                //default 2 hours 
-                expireTime = Math.floor(Date.now()/1000) + 120 * 60;
+                //default 2 hours
+                dateObject.setMinutes(dateObject.getMinutes() + 120);
+                expireTime = dateObject.getTime();
             } else {
-                expireTime = Math.floor(Date.now()/1000) + duration * 60;
+                dateObject.setMinutes(dateObject.getMinutes() + duration);
+                expireTime = dateObject.getTime();
             }
 
+            //mmToken generation
+            //const jwt = await this.jwtSign(sdk, account);
             //mmToken generation
             const mmToken = await this.tokenGenerate(sdk, account, expireTime);
             const sdkMsg = {
@@ -346,7 +487,7 @@ class AuthProvider {
             sdk.waitFor(EventType.PROVIDER_UPDATE).then(async (updateType) => { 
 		     
                 if (updateType == PROVIDER_UPDATE_TYPE.INITIALIZED) {
-                    console.log("provider initialized ...............", sdk.activeProvider);
+                    //console.log("provider initialized ...............", sdk.activeProvider);
                     const state = sdk.remoteConnection?.state;
 
                     state.connector.on(EventType.AUTHORIZED, async (data)=> {
@@ -413,6 +554,78 @@ class AuthProvider {
                 } else if (updateType == PROVIDER_UPDATE_TYPE.TERMINATE) {
                     console.log("provider terminate.........................");
                 }
+            });
+        };
+    }
+
+    mmJWT(options = {}) {
+        return async (req, res, next) => {
+            const sessionID = req.params.mmCode;
+            if(!this.SessionManager.has(sessionID)){
+                res.status(400).json({
+                    mmToken: null,
+                    NoteForAssistant: "the session is expired, please request a new MetaMask code",
+                });
+            }
+            
+            const sdk = this.SessionManager.get(sessionID);
+            const account = sdk.activeProvider.getSelectedAddress();
+            const timestamp = Math.floor(Date.now()/1000) + 60;
+            const provider = sdk.getProvider();
+            let sign = null;
+              // eth_signTypedData_v4 parameters. All of these parameters affect the resulting signature.
+            const msgParams = {
+                domain: {
+                    chainId: '0x1',
+                    name: 'RocketChat Login',
+                    verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+                    version: '1',
+                },
+                message: {
+                    account: account,
+                    timestamp: timestamp,
+                },
+                primaryType: 'Code',
+                types: {
+                    EIP712Domain: [
+                    { name: 'name', type: 'string' },
+                    { name: 'version', type: 'string' },
+                    { name: 'chainId', type: 'uint256' },
+                    { name: 'verifyingContract', type: 'address' },
+                    ],
+                    Code: [
+                    { name: 'account', type: 'string' },
+                    { name: 'timestamp', type: 'uint256' },
+                    ],
+                },
+            };
+
+            try {
+                sign = await provider.request({
+                    method: 'eth_signTypedData_v4',
+                    params: [account, JSON.stringify(msgParams)],
+                });        
+
+                console.log(sign);
+
+            } catch (err) {
+                console.error(err);
+            }
+
+            
+            const mmToken = `${timestamp}.${account}.${sign}`;
+            //const mmToken = `${msgParamsBase64Url}.${sign}`;
+            this.SessionManager.delete(sessionID);
+            console.log("SessionManager size", this.SessionManager.size);
+            const qrImagePath = path.join(__dirname, '..', 'public', `${sessionID}.png`);
+            fs.unlink(qrImagePath, (err) => {   });
+            this.MetaMaskSDKManager.set(account, sdk);
+            console.log("MetaMaskManager size", this.MetaMaskSDKManager.size);
+            console.log("MetaMaskManager sdk", 
+                this.MetaMaskSDKManager.get(account).activeProvider.getSelectedAddress());
+
+            res.status(200).json({
+                mmToken: mmToken,
             });
         };
     }

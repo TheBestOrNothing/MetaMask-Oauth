@@ -14,16 +14,19 @@
     "@metamask/sdk": "^0.27.0",
     "@metamask/sdk-communication-layer": "^0.27.0",
     "axios": "^1.6.7",
+    "base64url": "^3.0.1",
     "canvas": "^2.11.2",
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.1",
+    "ethereum-public-key-to-address": "^0.0.5",
     "ethereumjs-util": "^5.1.1",
     "express": "^4.18.2",
     "express-session": "^1.18.0",
     "hbs": "^4.2.0",
     "http-errors": "^2.0.0",
+    "jose": "^5.8.0",
     "morgan": "^1.10.0",
-    "qrcode": "^1.5.4",
-    "base64url": "^3.0.1"
+    "noble-secp256k1": "^1.2.14",
+    "qrcode": "^1.5.4"
   }
 }

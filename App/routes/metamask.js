@@ -11,13 +11,13 @@ const { REDIRECT_URI, POST_LOGOUT_REDIRECT_URI } = require('../authConfig');
 const router = express.Router();
 const base64url = require('base64url');
 const { toChecksumAddress } = require('ethereumjs-util');
+const  getMsgParams = require('../metamask/jwt.js');
 
 const {
-  encrypt,
-  recoverPersonalSignature,
-  recoverTypedSignature,
+    encrypt,
+    recoverPersonalSignature,
+    recoverTypedSignature,
 } = require('@metamask/eth-sig-util');
-
 
 const verifyMetaMaskToken = (req, res, next) => {
     // Check for the token in the request body
@@ -29,44 +29,19 @@ const verifyMetaMaskToken = (req, res, next) => {
         console.log("in the if statement");
         const parts = mmToken.split('.');
 
-        const timestampStr = parts[0];
+        const expireTimeStr = parts[0];
         const account = parts[1];
         const sign = parts[2];
 
-        const timestamp = BigInt(timestampStr);
+        const expireTime = Number(expireTimeStr);
 
         let timeout = false;
-        if(Math.floor(Date.now()/1000) > timestamp) {
+        if (Date.now()  > expireTime) {
             // Token has expired, terminate the session and remove from MetaMaskSDKManager
             timeout = true;
         }
 
-        const msgParams = {
-            domain: {
-              chainId: '0x1',
-              name: 'RocketChat Login',
-              verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
-              version: '1',
-            },
-            message: {
-              account: account,
-              timestamp: timestamp,
-            },
-            primaryType: 'Code',
-            types: {
-              EIP712Domain: [
-                { name: 'name', type: 'string' },
-                { name: 'version', type: 'string' },
-                { name: 'chainId', type: 'uint256' },
-                { name: 'verifyingContract', type: 'address' },
-              ],
-              Code: [
-                { name: 'account', type: 'string' },
-                { name: 'timestamp', type: 'uint256' },
-              ],
-            },
-          };
-
+        const msgParams = getMsgParams(account, expireTime);
         try {
             const recoveredAddr = recoverTypedSignature({
                 data: msgParams,
@@ -81,7 +56,7 @@ const verifyMetaMaskToken = (req, res, next) => {
                 req.account = account;
                 next();
             } else {
-                if(timeout) {   // Token has expired
+                if (timeout) {   // Token has expired
                     console.log(`Token has expired`);
                 } else {
                     console.log(`Failed to verify signer when comparing ${recoveredAddr} to ${from}`);
