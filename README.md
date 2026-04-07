@@ -1,4 +1,4 @@
-
+0xc256a6869dcc04af795c0f040b30f4a3fa9d3007
 # Express web application built with MSAL Node and Microsoft identity platform
 
 This sample demonstrates how to use [MSAL Node](https://www.npmjs.com/package/@azure/msal-node) to login, logout and acquire an access token for a protected resource such as Microsoft Graph.
